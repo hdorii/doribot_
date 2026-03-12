@@ -230,8 +230,14 @@ def build_kakao_response(text: str) -> dict:
 def get_rune():
     """
     직접 테스트용: GET /rune?name=낙화
+    황폐+ 같이 + 포함된 룬 이름도 정확히 처리
     """
-    name_query = request.args.get("name", "").strip()
+    from urllib.parse import parse_qs, unquote
+    # request.args는 + 를 공백으로 디코딩하므로 raw query string에서 직접 파싱
+    raw_query = request.query_string.decode("utf-8")
+    parsed = parse_qs(raw_query, keep_blank_values=True)
+    name_query = unquote(parsed.get("name", [""])[0]).strip()
+
     if not name_query:
         return jsonify({"error": "name 파라미터를 입력해주세요. 예: /rune?name=낙화"})
     
