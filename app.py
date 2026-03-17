@@ -10,7 +10,17 @@
 
 from flask import Flask, request, jsonify
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+
 from rune_data import search_rune, format_rune_info, RUNE_DATA
+
+try:
+    from calc_handler import handle_calc_command, get_help_text, SUPPORTED_CLASSES
+    CALC_ENABLED = True
+except ImportError:
+    CALC_ENABLED = False
 
 app = Flask(__name__)
 
@@ -182,7 +192,17 @@ def kakao_webhook():
         # 명령어 파싱
         if not user_text:
             return build_kakao_response("메시지를 인식할 수 없습니다.")
-        
+
+        # 배율/계산기 명령어
+        if user_text.startswith("/배율") or user_text.startswith("/계산"):
+            if user_text.strip() in ("/배율", "/계산", "/배율 도움말", "/계산 도움말"):
+                return build_kakao_response(get_help_text() if CALC_ENABLED else "계산기 준비 중입니다.")
+            if CALC_ENABLED:
+                response_text = handle_calc_command(user_text)
+            else:
+                response_text = "⚠️ 계산기 모듈을 불러올 수 없습니다."
+            return build_kakao_response(response_text)
+
         # 목록 조회
         if "목록" in user_text:
             response_text = handle_list_command(user_text)
@@ -192,11 +212,15 @@ def kakao_webhook():
         else:
             response_text = (
                 "💡 사용 가능한 명령어:\n\n"
-                "/룬 <이름> - 룬 정보 검색\n"
+                "🗡️ 룬 검색\n"
+                "/룬검색 <이름> - 룬 정보 검색\n"
                 "/룬 목록 - 전체 룬 목록\n"
-                "/룬 목록 무기 - 무기 룬 목록\n"
-                "/룬 목록 방어구 전설 - 방어구 전설 룬\n"
-                "/룬 목록 엠블럼 - 엠블럼 룬 목록"
+                "/룬 목록 무기 - 무기 룬 목록\n\n"
+                "📊 배율 계산기\n"
+                "/배율 <클래스> <스탯> <룬목록>\n"
+                "/배율 도움말 - 계산기 사용법\n\n"
+                "예시:\n"
+                "/배율 검술사 연3500 강2000 치7500 추1200 스3000 검무2 아득2"
             )
         
         return build_kakao_response(response_text)
@@ -280,6 +304,37 @@ def list_runes():
         "count": len(filtered),
         "runes": filtered
     })
+
+
+# =============================================
+# 배율 계산기 엔드포인트
+# =============================================
+
+@app.route("/calc", methods=["POST"])
+def calc_damage_api():
+    """
+    카카오봇 R → POST /calc
+    body: { "utterance": "/배율 검술사 연3500 ..." }
+    """
+    if not CALC_ENABLED:
+        return jsonify({"result": "⚠️ 계산기 모듈을 불러올 수 없습니다."})
+    try:
+        body = request.get_json()
+        utterance = body.get("utterance", "").strip() if body else ""
+        if not utterance:
+            return jsonify({"result": "❌ 입력값이 없습니다."})
+        result = handle_calc_command(utterance)
+        return jsonify({"result": result})
+    except Exception as e:
+        return jsonify({"result": f"⚠️ 서버 오류: {str(e)}"})
+
+
+@app.route("/calc/help", methods=["GET"])
+def calc_help_api():
+    """계산기 도움말"""
+    if not CALC_ENABLED:
+        return jsonify({"result": "계산기 준비 중입니다."})
+    return jsonify({"result": get_help_text()})
 
 
 if __name__ == "__main__":
